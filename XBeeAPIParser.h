@@ -53,6 +53,7 @@ private:
     Mutex _modemTxMutex;
     Thread _updateBufferThread;
     osThreadId _updateBufferThreadId;
+    osThreadId _frameAlertThreadId;
 
     void _pull_byte();
     void _verify_association();
@@ -77,6 +78,7 @@ public:
     void set_max_failed_transmits(int maxFails);
     char last_RSSI();
     uint64_t get_address(string ni);
+    void set_frame_alert_thread_id(osThreadId_t threadID);
 };
 
 #endif

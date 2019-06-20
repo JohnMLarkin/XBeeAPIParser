@@ -19,6 +19,7 @@ XBeeAPIParser::XBeeAPIParser(PinName tx, PinName rx, int baud) : _modem(tx,rx,ba
   _isAssociated = false;
   _failedTransmits = 0;
   _maxFailedTransmits = 5;
+  _frameAlertThreadId = NULL;
   _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer));
   _modem.attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
 }
@@ -184,23 +185,14 @@ int XBeeAPIParser::rxPacket(char* payload, uint64_t* address) {
 }
 
 bool XBeeAPIParser::send(apiFrame_t* frame) {
-  // printf("Frame type: %02X\r\n", frame->type);
-  // printf("Frame ID: %02X\r\n", frame->id);
-  // printf("Frame length: %d\r\n", frame->length);
-  // printf("Frame data: ");
   bool success = true;
   uint32_t checksum = frame->type;
   checksum = checksum + frame->id;
   for (int i = 0; i < frame->length; i++) {
-    // printf("%02X ", frame->data[i]);
     checksum = checksum + frame->data[i];
   }
-  // printf("\r\n");
   checksum = checksum & 0xFF;
   checksum = 0xFF - checksum;
-  // printf("Checksum: %02X\r\n", checksum);
-
-
   Timer t;
   t.start();
   if (_modemTxMutex.trylock_for(_time_out)) {
@@ -243,6 +235,10 @@ bool XBeeAPIParser::send(apiFrame_t* frame) {
     _modemTxMutex.unlock(); 
   }
   return success;
+}
+
+void XBeeAPIParser::set_frame_alert_thread_id(osThreadId_t threadID) {
+  _frameAlertThreadId = threadID;
 }
 
 void XBeeAPIParser::set_max_failed_transmits(int maxFails) {
@@ -448,6 +444,7 @@ void XBeeAPIParser::_move_frame_to_buffer() {
       _frameBuffer.length++;
       _frameBufferMutex.unlock();
       _partialFrame.status = 0x00;
+      if (_frameAlertThreadId) osSignalSet(_frameAlertThreadId, 0x01); 
       _modem.attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
     }
   }

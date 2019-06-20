@@ -19,6 +19,7 @@ XBeeAPIParser::XBeeAPIParser(PinName tx, PinName rx, int baud) : _modem(tx,rx,ba
   _isAssociated = false;
   _failedTransmits = 0;
   _maxFailedTransmits = 5;
+  _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer));
   _modem.attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
 }
 
@@ -341,7 +342,7 @@ void XBeeAPIParser::_pull_byte() {
   char buff;
   uint16_t len;
   uint32_t checksum = 0;
-  while (_modem.readable()) {
+  while (_modem.readable() && (_partialFrame.status < 0x06)) {
     buff = _modem.getc();
     switch (_partialFrame.status) {
       case 0x00:  // Waiting for start of new frame
@@ -412,23 +413,42 @@ void XBeeAPIParser::_pull_byte() {
                 default:
                   _isAssociated = false;
               }
-            } else {
-              if (_frameBuffer.length == MAX_INCOMING_FRAMES) {  // Buffer full, drop oldest frame
-                _remove_frame_by_index(0);
-              }
-              int n = _frameBuffer.length; // Save current length for ease of copying to buffer
-              _frameBuffer.frame[n].id = _partialFrame.frame.id;
-              _frameBuffer.frame[n].type = _partialFrame.frame.type;
-              _frameBuffer.frame[n].length = _partialFrame.frame.length;
-              for (int i = 0; i < _partialFrame.frame.length; i++)
-                _frameBuffer.frame[n].data[i] = _partialFrame.frame.data[i];
-              _frameBuffer.length++;
               _partialFrame.status = 0x00;
+            } else {
+              _modem.attach(NULL); // Stop interrupts on serial input
+              _partialFrame.status = 0x06; 
+              osSignalSet(_updateBufferThreadId, 0x06); // Trigger copy to frame buffer outside of ISR
             }
           } else { // Checksum doesn't match.  Bad frame!
             _partialFrame.status = 0x00; // There should be some error signaling
           }
         }
+        break;
+      case 0x06:
+        break;
+    }
+  }
+}
+
+void XBeeAPIParser::_move_frame_to_buffer() {
+  _updateBufferThreadId = osThreadGetId();
+
+  while (true) {
+    osSignalWait(0x06, osWaitForever);
+    if (_frameBufferMutex.trylock_for(5*_time_out)) {
+      if (_frameBuffer.length == MAX_INCOMING_FRAMES) {  // Buffer full, drop oldest frame
+        _remove_frame_by_index(0);
+      }
+      int n = _frameBuffer.length; // Save current length for ease of copying to buffer
+      _frameBuffer.frame[n].id = _partialFrame.frame.id;
+      _frameBuffer.frame[n].type = _partialFrame.frame.type;
+      _frameBuffer.frame[n].length = _partialFrame.frame.length;
+      for (int i = 0; i < _partialFrame.frame.length; i++)
+        _frameBuffer.frame[n].data[i] = _partialFrame.frame.data[i];
+      _frameBuffer.length++;
+      _frameBufferMutex.unlock();
+      _partialFrame.status = 0x00;
+      _modem.attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
     }
   }
 }

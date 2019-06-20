@@ -51,12 +51,14 @@ private:
     // Mutex _partialFrameMutex;
     Mutex _frameBufferMutex;
     Mutex _modemTxMutex;
-    // Thread _rxThread;
+    Thread _updateBufferThread;
+    osThreadId _updateBufferThreadId;
 
     void _pull_byte();
     void _verify_association();
     void _disassociate();
     void _remove_frame_by_index(int n);
+    void _move_frame_to_buffer();
     void _make_AT_frame(string cmd, apiFrame_t* frame);
     void _make_AT_frame(string cmd, string param, apiFrame_t* frame);
 

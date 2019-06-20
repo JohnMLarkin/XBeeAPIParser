@@ -17,6 +17,8 @@ using namespace std;
 #define MAX_INCOMING_FRAMES 10
 #define MAX_FRAME_LENGTH 150
 
+#define XBEE_MIN_ADDRESS 0x0013A20000000000
+
 typedef struct {
     char type;
     char id;
@@ -71,6 +73,7 @@ public:
     bool get_oldest_frame(apiFrame_t* frame);
     bool find_frame(char frameType, char frameID, apiFrame_t* frame);
     bool find_frame(char frameType, apiFrame_t* frame);
+    void flush_old_frames(char frameType, char frameID);
     int txAddressed(uint64_t address, char* payload, int len);
     int txBroadcast(char* payload, int len);
     int rxPacket(char* payload, uint64_t* address);

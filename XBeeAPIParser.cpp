@@ -68,6 +68,11 @@ bool XBeeAPIParser::find_frame(char frameType, apiFrame_t* frame) {
   return find_frame(frameType, 0xFF, frame);
 }
 
+void XBeeAPIParser::flush_old_frames(char frameType, char frameID) {
+  apiFrame_t frame;
+  while (find_frame(frameType, frameID, &frame));
+}
+
 uint64_t XBeeAPIParser::get_address(string ni) {
   uint64_t address;
   Timer t;
@@ -77,17 +82,21 @@ uint64_t XBeeAPIParser::get_address(string ni) {
   int len;
   bool foundFrame;
   _make_AT_frame("DN", ni, &frame);
+  flush_old_frames(frame.type, frame.id);
   frameID = frame.id;
   send(&frame);
+  wait_ms(5);
   t.start();
   foundFrame = false;
-  while ((t.read_ms()<2*_time_out) && (!foundFrame)) {
+  while ((t.read_ms()<10*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) wait_ms(5);
   }
+  if (!foundFrame) printf("Timed out after DN!\r\n");
   if ((!foundFrame) || (frame.length != 3)) return 0;
-  if (!((frame.data[0] = 'D') && (frame.data[1] == 'N') && (frame.data[2]==0))) return 0;
+  if (!((frame.data[0] = 'D') && (frame.data[1] == 'N') && (frame.data[2]==0))) return 1;
   _make_AT_frame("DH", &frame);
+  flush_old_frames(frame.type, frame.id);
   frameID = frame.id;
   send(&frame);
   t.reset();
@@ -96,12 +105,14 @@ uint64_t XBeeAPIParser::get_address(string ni) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) wait_ms(5);
   }
+  if (!foundFrame) printf("Timed out after DH!\r\n");
   if ((!foundFrame) || (frame.length != 7)) return 0;
   address = 0;
   for (int i = 0; i < 4; i++) {
     address = (address << 8) | frame.data[3+i];
   }
   _make_AT_frame("DL", &frame);
+  flush_old_frames(frame.type, frame.id);
   frameID = frame.id;
   send(&frame);
   t.reset();
@@ -110,6 +121,7 @@ uint64_t XBeeAPIParser::get_address(string ni) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) wait_ms(5);
   }
+  if (!foundFrame) printf("Timed out after DL!\r\n");
   if ((!foundFrame) || (frame.length != 7)) return 0;
   for (int i = 0; i < 4; i++) {
     address = (address << 8) | frame.data[3+i];

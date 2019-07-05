@@ -14,8 +14,8 @@
 #include <string> 
 using namespace std;
 
-#define MAX_INCOMING_FRAMES 10
-#define MAX_FRAME_LENGTH 150
+#define MAX_INCOMING_FRAMES 5
+#define MAX_FRAME_LENGTH 70
 
 #define XBEE_MIN_ADDRESS 0x0013A20000000000
 

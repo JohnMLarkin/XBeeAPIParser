@@ -94,9 +94,8 @@ uint64_t XBeeAPIParser::get_address(string ni) {
   t.start();
   foundFrame = false;
   // Change read_ms to elapsed_time
-  // elapsed_time returns the time passed in us as a chrono duration
-  // To compare this to the integer "time_out", we must cast the chronoduration as ms
-  while (duration_cast<milliseconds>(t.elapsed_time()).count()<10*_time_out) && (!foundFrame)) {
+  // count() returns the float value of elapsed time, in us
+  while (((t.elapsed_time().count()*0.001) < 10*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -109,7 +108,7 @@ uint64_t XBeeAPIParser::get_address(string ni) {
   send(&frame);
   t.reset();
   foundFrame = false;
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  while (((t.elapsed_time().count()*0.001) <2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -125,7 +124,7 @@ uint64_t XBeeAPIParser::get_address(string ni) {
   send(&frame);
   t.reset();
   foundFrame = false;
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  while (((t.elapsed_time().count()*0.001) <2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -148,7 +147,7 @@ char XBeeAPIParser::last_RSSI() {
   send(&frame);
   t.start();
   foundFrame = false;
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  while (((t.elapsed_time().count()*0.001)<2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -206,6 +205,7 @@ int XBeeAPIParser::rxPacket(char* payload, uint64_t* address) {
 
 bool XBeeAPIParser::send(apiFrame_t* frame) {
   bool success = true;
+  char c;
   uint32_t checksum = frame->type;
   checksum = checksum + frame->id;
   for (int i = 0; i < frame->length; i++) {
@@ -216,42 +216,50 @@ bool XBeeAPIParser::send(apiFrame_t* frame) {
   Timer t;
   t.start();
   if (_modemTxMutex.trylock_for(_time_out)) {
-    // Replace all t.read()s with OS 6 equivalent 
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc(0x7E);
+    // Replace all t.read()s with OS 6 equivalent
+    // t.elapsed_time().count returns elapsed time as float, in us 
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    if (_modem->writable() && success) {
+      c = 0x7E;
+      _modem->write(&c, 1);
     } else success = false; // Timed out
 
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc((frame->length+2) >> 8);
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    if (_modem->writable() && success) {
+      c = (frame->length+2) >> 8;
+      _modem->write(&c, 1);
     } else success = false; // Timed out
     
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc((frame->length+2) & 0xFF);
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    if (_modem->writable() && success) {
+      c = (frame->length+2) & 0xFF;
+      _modem->write(&c, 1);
     } else success = false; // Timed out
     
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc(frame->type);
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    if (_modem->writable() && success) {
+      c = frame->type;
+      _modem->write(&c, 1);
     } else success = false; // Timed out
 
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc(frame->id);
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    if (_modem->writable() && success) {
+      c = frame->id; 
+      _modem->write(&c, 1);
     } else success = false; // Timed out
 
     for (int i = 0; i < frame->length; i++) {
-      while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-      if (_modem->writeable() && success) {
-        _modem->putc(frame->data[i]);
+      while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+      if (_modem->writable() && success) {
+        c = frame->data[i];
+        _modem->write(&c, 1);
       } else success = false; // Timed out
     }
 
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc(checksum);
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    if (_modem->writable() && success) {
+      c = checksum; 
+      _modem->write(&c, 1);
     } else success = false; // Timed out
     _modemTxMutex.unlock(); 
   }
@@ -293,7 +301,7 @@ int XBeeAPIParser::txAddressed(uint64_t address, char* payload, int len) {
   t.start();
   foundFrame = false;
   ThisThread::sleep_for(7ms);
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  while (((t.elapsed_time().count()*0.001) < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x89, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(7ms);
   }
@@ -326,7 +334,7 @@ void XBeeAPIParser::_disassociate() {
   send(&frame);
   t.start();
   foundFrame = false;
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  while (((t.elapsed_time().count()*0.001) < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -354,6 +362,19 @@ void XBeeAPIParser::_make_AT_frame(string cmd, string param, apiFrame_t* frame) 
   }
   frame->length = 2 + param.length();
 }
+
+/** The NEW way forward
+while (true) {
+  while (_modem->readable() and other stuff) {
+    existing stuff happens;
+  }
+  if (frame ready to move) {
+    do the frame moving stuff
+  }
+  ThisThread::sleep_for(10ms);
+}
+*/
+
 
 void XBeeAPIParser::_pull_byte() {
   char buff;
@@ -496,7 +517,7 @@ void XBeeAPIParser::_verify_association() {
   foundFrame = false;
   send(&frame);
   t.start();
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  while (((t.elapsed_time().count()*0.001) < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }

@@ -1,8 +1,8 @@
 /** XBee API buffered frame parser
  * 
  *  @author John M. Larkin (jlarkin@whitworth.edu)
- *  @version 0.1
- *  @date 2019
+ *  @version 1.1
+ *  @date 2021
  *  @copyright MIT License
  */
 
@@ -10,7 +10,6 @@
 #define XBEE_API_PARSER_H
 
 #include "mbed.h"
-#include "rtos.h"
 #include <string> 
 using namespace std;
 

@@ -2,7 +2,12 @@
 #include "rtos.h"
 #include "XBeeAPIParser.h"
 
-XBeeAPIParser::XBeeAPIParser(PinName tx, PinName rx, int baud) : _modem(tx,rx,baud) {
+XBeeAPIParser::XBeeAPIParser(BufferedSerial* modem){ 
+  // Since BufferedSerial is non-copyable change assignment of 
+  // tx, rx, and baud rate from via constructor to passing a pointer 
+  // and assigning it to the XBeeAPIParser private BufferedSerial pointer
+  _modem = modem; 
+
   // for (int i = 0; i < MAX_INCOMING_FRAMES; i++) {
   //   _inFramesLengths[i] = 0;
   // }
@@ -21,7 +26,7 @@ XBeeAPIParser::XBeeAPIParser(PinName tx, PinName rx, int baud) : _modem(tx,rx,ba
   _maxFailedTransmits = 5;
   _frameAlertThreadId = NULL;
   _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer));
-  _modem.attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
+  _modem->attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
 }
 
 bool XBeeAPIParser::associated() {
@@ -85,12 +90,15 @@ uint64_t XBeeAPIParser::get_address(string ni) {
   flush_old_frames(frame.type, frame.id);
   frameID = frame.id;
   send(&frame);
-  wait_ms(5);
+  ThisThread::sleep_for(5ms);
   t.start();
   foundFrame = false;
-  while ((t.read_ms()<10*_time_out) && (!foundFrame)) {
+  // Change read_ms to elapsed_time
+  // elapsed_time returns the time passed in us as a chrono duration
+  // To compare this to the integer "time_out", we must cast the chronoduration as ms
+  while (duration_cast<milliseconds>(t.elapsed_time()).count()<10*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
-    if (!foundFrame) wait_ms(5);
+    if (!foundFrame) ThisThread::sleep_for(5ms);
   }
   if (!foundFrame) printf("Timed out after DN!\r\n");
   if ((!foundFrame) || (frame.length != 3)) return 0;
@@ -101,9 +109,9 @@ uint64_t XBeeAPIParser::get_address(string ni) {
   send(&frame);
   t.reset();
   foundFrame = false;
-  while ((t.read_ms()<2*_time_out) && (!foundFrame)) {
+  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
-    if (!foundFrame) wait_ms(5);
+    if (!foundFrame) ThisThread::sleep_for(5ms);
   }
   if (!foundFrame) printf("Timed out after DH!\r\n");
   if ((!foundFrame) || (frame.length != 7)) return 0;
@@ -117,9 +125,9 @@ uint64_t XBeeAPIParser::get_address(string ni) {
   send(&frame);
   t.reset();
   foundFrame = false;
-  while ((t.read_ms()<2*_time_out) && (!foundFrame)) {
+  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
-    if (!foundFrame) wait_ms(5);
+    if (!foundFrame) ThisThread::sleep_for(5ms);
   }
   if (!foundFrame) printf("Timed out after DL!\r\n");
   if ((!foundFrame) || (frame.length != 7)) return 0;
@@ -140,9 +148,9 @@ char XBeeAPIParser::last_RSSI() {
   send(&frame);
   t.start();
   foundFrame = false;
-  while ((t.read_ms()<2*_time_out) && (!foundFrame)) {
+  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
-    if (!foundFrame) wait_ms(5);
+    if (!foundFrame) ThisThread::sleep_for(5ms);
   }
   if (!foundFrame) return 0xFF;
   if (frame.length == 6) {
@@ -208,41 +216,42 @@ bool XBeeAPIParser::send(apiFrame_t* frame) {
   Timer t;
   t.start();
   if (_modemTxMutex.trylock_for(_time_out)) {
-    while ((t.read() < _time_out) && (!_modem.writeable())) {}
-    if (_modem.writeable() && success) {
-      _modem.putc(0x7E);
+    // Replace all t.read()s with OS 6 equivalent 
+    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
+    if (_modem->writeable() && success) {
+      _modem->putc(0x7E);
     } else success = false; // Timed out
 
-    while ((t.read() < _time_out) && (!_modem.writeable())) {}
-    if (_modem.writeable() && success) {
-      _modem.putc((frame->length+2) >> 8);
+    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
+    if (_modem->writeable() && success) {
+      _modem->putc((frame->length+2) >> 8);
     } else success = false; // Timed out
     
-    while ((t.read() < _time_out) && (!_modem.writeable())) {}
-    if (_modem.writeable() && success) {
-      _modem.putc((frame->length+2) & 0xFF);
+    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
+    if (_modem->writeable() && success) {
+      _modem->putc((frame->length+2) & 0xFF);
     } else success = false; // Timed out
     
-    while ((t.read() < _time_out) && (!_modem.writeable())) {}
-    if (_modem.writeable() && success) {
-      _modem.putc(frame->type);
+    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
+    if (_modem->writeable() && success) {
+      _modem->putc(frame->type);
     } else success = false; // Timed out
 
-    while ((t.read() < _time_out) && (!_modem.writeable())) {}
-    if (_modem.writeable() && success) {
-      _modem.putc(frame->id);
+    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
+    if (_modem->writeable() && success) {
+      _modem->putc(frame->id);
     } else success = false; // Timed out
 
     for (int i = 0; i < frame->length; i++) {
-      while ((t.read() < _time_out) && (!_modem.writeable())) {}
-      if (_modem.writeable() && success) {
-        _modem.putc(frame->data[i]);
+      while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
+      if (_modem->writeable() && success) {
+        _modem->putc(frame->data[i]);
       } else success = false; // Timed out
     }
 
-    while ((t.read() < _time_out) && (!_modem.writeable())) {}
-    if (_modem.writeable() && success) {
-      _modem.putc(checksum);
+    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
+    if (_modem->writeable() && success) {
+      _modem->putc(checksum);
     } else success = false; // Timed out
     _modemTxMutex.unlock(); 
   }
@@ -283,10 +292,10 @@ int XBeeAPIParser::txAddressed(uint64_t address, char* payload, int len) {
   Timer t;
   t.start();
   foundFrame = false;
-  wait_ms(7);
-  while ((t.read_ms()<2*_time_out) && (!foundFrame)) {
+  ThisThread::sleep_for(7ms);
+  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x89, frameID, &frame);
-    if (!foundFrame) wait_ms(7);
+    if (!foundFrame) ThisThread::sleep_for(7ms);
   }
   if (foundFrame) {
     if (frame.data[0] == 0x00) {
@@ -317,9 +326,9 @@ void XBeeAPIParser::_disassociate() {
   send(&frame);
   t.start();
   foundFrame = false;
-  while ((t.read_ms()<2*_time_out) && (!foundFrame)) {
+  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
-    if (!foundFrame) wait_ms(5);
+    if (!foundFrame) ThisThread::sleep_for(5ms);
   }
   if (foundFrame) {
     if ((frame.data[0]=='D') && (frame.data[1]=='A') && (frame.data[2]==0)) {
@@ -350,8 +359,8 @@ void XBeeAPIParser::_pull_byte() {
   char buff;
   uint16_t len;
   uint32_t checksum = 0;
-  while (_modem.readable() && (_partialFrame.status < 0x06)) {
-    buff = _modem.getc();
+  while (_modem->readable() && (_partialFrame.status < 0x06)) {
+    buff = _modem->getc();
     switch (_partialFrame.status) {
       case 0x00:  // Waiting for start of new frame
         if (buff == 0x7E) {  // Frame start byte should be 0x7E
@@ -423,7 +432,7 @@ void XBeeAPIParser::_pull_byte() {
               }
               _partialFrame.status = 0x00;
             } else {
-              _modem.attach(NULL); // Stop interrupts on serial input
+              _modem->attach(NULL); // Stop interrupts on serial input
               _partialFrame.status = 0x06; 
               osSignalSet(_updateBufferThreadId, 0x06); // Trigger copy to frame buffer outside of ISR
             }
@@ -457,7 +466,7 @@ void XBeeAPIParser::_move_frame_to_buffer() {
       _frameBufferMutex.unlock();
       _partialFrame.status = 0x00;
       if (_frameAlertThreadId) osSignalSet(_frameAlertThreadId, 0x01); 
-      _modem.attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
+      _modem->attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
     }
   }
 }
@@ -487,9 +496,9 @@ void XBeeAPIParser::_verify_association() {
   foundFrame = false;
   send(&frame);
   t.start();
-  while ((t.read_ms()<2*_time_out) && (!foundFrame)) {
+  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
-    if (!foundFrame) wait_ms(5);
+    if (!foundFrame) ThisThread::sleep_for(5ms);
   }
   if (foundFrame) {
     if ((frame.data[0]=='A') && (frame.data[1]=='I') && (frame.data[2]==0)) {

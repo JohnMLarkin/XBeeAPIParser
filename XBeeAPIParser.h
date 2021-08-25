@@ -40,7 +40,7 @@ typedef struct {
 class XBeeAPIParser
 {
 private:
-    RawSerial _modem;
+    BufferedSerial* _modem;
     volatile partialFrame_t _partialFrame;
     volatile frameBuffer_t _frameBuffer;
     int _time_out;

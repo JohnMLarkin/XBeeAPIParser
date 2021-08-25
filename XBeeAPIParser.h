@@ -1,6 +1,7 @@
 /** XBee API buffered frame parser
  * 
  *  @author John M. Larkin (jlarkin@whitworth.edu)
+ *  @author Lydia I. Calderon-Aceituno (lcalderon-aceituno24@my.whitworth.edu)
  *  @version 1.1
  *  @date 2021
  *  @copyright MIT License
@@ -65,7 +66,7 @@ private:
     void _make_AT_frame(string cmd, string param, apiFrame_t* frame);
 
 public:
-    XBeeAPIParser(PinName tx, PinName rx, int baud = 921600);
+    XBeeAPIParser(BufferedSerial* modem);
     bool readable();
     bool associated();
     bool send(apiFrame_t* frame);

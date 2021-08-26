@@ -14,19 +14,19 @@ XBeeAPIParser::XBeeAPIParser(BufferedSerial* modem){
   // _numInFrames = 0;
   // _inBufferLength = -1;
   for (int i = 0; i < MAX_INCOMING_FRAMES; i++) {
-    _frameBuffer.frame[i].type = 0xFF;
+    _frameBuffer.frame[i].type = 0xFF; // Set frame type to generic 
     _frameBuffer.frame[i].id = 0x00;
     _frameBuffer.frame[i].length = 0;
   }
   _frameBuffer.length = 0;
-  _partialFrame.status = 0x00;
-  _time_out = 1000;
-  _isAssociated = false;
+  _partialFrame.status = 0x00; // Set status to "all good"
+  _time_out = 1000; // Timing variable used throughout 
+  _isAssociated = false; // Volatile bool
   _failedTransmits = 0;
   _maxFailedTransmits = 5;
-  _frameAlertThreadId = NULL;
-  _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer));
-  _modem->attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
+  _frameAlertThreadId = NULL; // Set the frame alert thread id to null
+  _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer)); // Start the update buffer thread and attach it to the move_frame_to_buffer function
+  _modem->attach(callback(this, &XBeeAPIParser::_pull_byte), SerialBase::RxIrq);
 }
 
 bool XBeeAPIParser::associated() {
@@ -351,16 +351,16 @@ void XBeeAPIParser::_make_AT_frame(string cmd, apiFrame_t* frame) {
 
 void XBeeAPIParser::_make_AT_frame(string cmd, string param, apiFrame_t* frame) {
   frame->type = 0x08; // Local AT command frame
-  if (cmd.length()==2) {
-    frame->data[0] = cmd[0];
-    frame->data[1] = cmd[1];
+  if (cmd.length()==2) { 
+    frame->data[0] = cmd[0]; // Set the first member of the data buffer to the first char of the given string
+    frame->data[1] = cmd[1]; // Set the second member of the data buffer to the second char of the given string
   }
-  frame->id = cmd[0] + cmd[1];
-  if (param.length()>0) {
+  frame->id = cmd[0] + cmd[1]; // Set the frame id to the sum of the first two characters in the given string
+  if (param.length()>0) { // Only enter this if a parameter is explicitly given
     for (int i = 0; i < param.length(); i++)
       frame->data[2+i] = param[i];
   }
-  frame->length = 2 + param.length();
+  frame->length = 2 + param.length(); // Set the length of the data 
 }
 
 /** The NEW way forward
@@ -507,26 +507,30 @@ void XBeeAPIParser::_remove_frame_by_index(int n) {
 }
 
 void XBeeAPIParser::_verify_association() {
-  Timer t;
-  apiFrame_t frame;
+  Timer t; // Create timer object 
+  apiFrame_t frame; // Create frame object 
   bool foundFrame;
-  char status = 0xFE;
-  _make_AT_frame("AI", &frame);
-  char frameID = frame.id;
-  _isAssociated = false;
-  foundFrame = false;
-  send(&frame);
-  t.start();
+  char status = 0xFE; // Set the status 
+  // Load "AI" into the data buffer
+  // Set the frame ID to the sum of the first two characters in the given data string
+  _make_AT_frame("AI", &frame);  
+  char frameID = frame.id; // Collect the frame id 
+  _isAssociated = false; // Set default value to false 
+  foundFrame = false; // Set default value to false 
+  send(&frame); // Write out the frame 
+  t.start(); // Start the timer 
+  // While the elapsed time in milliseconds is less than 1000ms (1s) and while the frame
+  // has not been found, check if the frame has been found
   while (((t.elapsed_time().count()*0.001) < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
-  if (foundFrame) {
+  if (foundFrame) { // If the frame is found 
     if ((frame.data[0]=='A') && (frame.data[1]=='I') && (frame.data[2]==0)) {
-      status = frame.data[3];
+      status = frame.data[3]; // Why is the status collected from here? 
     }
   }
-  if (status == 0x00) _isAssociated = true;
+  if (status == 0x00) _isAssociated = true; // If the status indicates that the End device successfully associated, return true 
 }
 
 

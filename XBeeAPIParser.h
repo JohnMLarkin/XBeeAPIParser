@@ -47,7 +47,7 @@ private:
     int _failedTransmits;
     int _maxFailedTransmits;
 
-    volatile bool _isAssociated;
+    volatile bool _isAssociated; // Volatile bool indicating device association 
 
     // RTOS management
     // Mutex _partialFrameMutex;

@@ -1,5 +1,4 @@
-#include "mbed.h"
-#include "rtos.h"
+#include <mbed.h>
 #include "XBeeAPIParser.h"
 
 XBeeAPIParser::XBeeAPIParser(BufferedSerial* modem){ 

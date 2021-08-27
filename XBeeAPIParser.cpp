@@ -225,28 +225,35 @@ bool XBeeAPIParser::get_oldest_frame(apiFrame_t* frame) {
   return false; // Return flase if mutex does not lock within the given window of time 
 }
 
-// Receives a packet 
-// Concerns here:
-// Uses a command (0x90) that is only designated for the XBee Pro
-// The XBee S1 (which is what we are using) has two different commands for
-// receiving a 64-bit (0x80) and 16-bit (0x81) packets
+/** 
+ * Checks if the receive packet frame has been emitted. 
+ * Note that 0x90 (receive packet frame type) is emitted when 
+ * a device in standard API mode receives an RF data packet 
+ * 
+ * @returns unknown 
+ */
 int XBeeAPIParser::rxPacket(char* payload, uint64_t* address) {
-  apiFrame_t frame;
-  bool foundFrame;
+  apiFrame_t frame; // Create a blank frames 
+  bool foundFrame; 
   uint64_t who = 0;
-  foundFrame = find_frame(0x90, &frame);
-  if (foundFrame) {
+  foundFrame = find_frame(0x90, &frame); // Find a receive packet (0x90) frame in the frame buffer 
+  if (foundFrame) { // If the receive packet frame is found 
     for (int i = 0; i < 8; i++) {
-      who = (who << 8) | frame.data[i];
+      who = (who << 8) | frame.data[i]; // Copy over the 64-bit source address (the sender's address)
     }
-    *address = who;
+    *address = who; // Set address 
     for (int i = 0; i < (frame.length-9); i++) {
-      payload[i] = frame.data[i+11];
+      payload[i] = frame.data[i+11]; // Copy over the received data 
     }
-    return (frame.length-11);
+    return (frame.length-11); // Not sure why we are pulling from this particular index 
   } else return 0;
 }
 
+/** 
+ * Writes out a given frame 
+ * 
+ * @returns true if successful, else false 
+ */
 bool XBeeAPIParser::send(apiFrame_t* frame) {
   bool success = true;
   char c;
@@ -266,54 +273,65 @@ bool XBeeAPIParser::send(apiFrame_t* frame) {
   Timer t;
   t.start(); // Start timer 
   if (_modemTxMutex.trylock_for(_time_out)) { // Try to lock down mutex for 1s 
-    // Replace all t.read()s with OS 6 equivalent
-    // t.elapsed_time().count returns elapsed time as float, in us 
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
-    if (_modem->writable() && success) {
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    if (_modem->writable() && success) { // If there is data, write out the start delimiter (0x7E)
       c = 0x7E;
       _modem->write(&c, 1);
-    } else success = false; // Timed out
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
 
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    // ???
+    // The timer is never reset so either 
+    // a) the entire communication (all the while loops in this function) is meant to execute in less than 1s
+    // b) all while loops after the time is > 1s will just not be executed 
+    // c) there was a mistake in the code and the timer is meant to be reset before each while loop, 
+    //    giving each communication chunk 1s to be detected and sent out 
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
     if (_modem->writable() && success) {
-      c = (frame->length+2) >> 8;
+      c = (frame->length+2) >> 8; // Write out length MSB
       _modem->write(&c, 1);
-    } else success = false; // Timed out
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
     
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
     if (_modem->writable() && success) {
-      c = (frame->length+2) & 0xFF;
+      c = (frame->length+2) & 0xFF; // Write out length LSB 
       _modem->write(&c, 1);
-    } else success = false; // Timed out
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
     
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
     if (_modem->writable() && success) {
-      c = frame->type;
+      c = frame->type; // Write out frame type 
       _modem->write(&c, 1);
-    } else success = false; // Timed out
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
 
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
     if (_modem->writable() && success) {
-      c = frame->id; 
+      c = frame->id; // Wrtie out frame ID 
       _modem->write(&c, 1);
-    } else success = false; // Timed out
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
 
     for (int i = 0; i < frame->length; i++) {
-      while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+      while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+      // Once the timer timed out or data was detected at the serial port, move on from loop  
       if (_modem->writable() && success) {
-        c = frame->data[i];
+        c = frame->data[i]; // Write out each byte of the data, one at a time 
         _modem->write(&c, 1);
-      } else success = false; // Timed out
+      } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
     }
 
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
     if (_modem->writable() && success) {
-      c = checksum; 
+      c = checksum; // Write out the final byte (checksum) 
       _modem->write(&c, 1);
-    } else success = false; // Timed out
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
     _modemTxMutex.unlock(); 
   }
-  return success;
+  return success; // Return success boolean 
 }
 
 void XBeeAPIParser::set_frame_alert_thread_id(osThreadId_t threadID) {
@@ -328,6 +346,7 @@ void XBeeAPIParser::set_timeout(int time_ms) {
   if ((time_ms > 0) && (time_ms < 5000)) _time_out = time_ms;
 }
 
+// ???
 int XBeeAPIParser::txAddressed(uint64_t address, char* payload, int len) {
   if (len>(MAX_FRAME_LENGTH)) return -1;
   apiFrame_t frame;

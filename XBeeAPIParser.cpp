@@ -186,6 +186,11 @@ char XBeeAPIParser::last_RSSI() {
   return rssi; // Return RSSI value 
 }
 
+/** 
+ * Checks if there are any frames in the frame buffer 
+ * 
+ * @returns true if there are frames in the frame buffer, false otherwise
+ */
 bool XBeeAPIParser::readable() {
   bool hasFrames = false;
   if (_frameBufferMutex.trylock_for(_time_out)) {
@@ -195,23 +200,36 @@ bool XBeeAPIParser::readable() {
   return hasFrames;
 }
 
+/** 
+ * Returns the frame in the first index of the frame buffer 
+ * 
+ * @returns true if successful
+ */
 bool XBeeAPIParser::get_oldest_frame(apiFrame_t* frame) {
+  // Try to lock the frame buffer mutex for 1s
   if (_frameBufferMutex.trylock_for(_time_out)) {
-    if (_frameBuffer.length > 0) {
+    if (_frameBuffer.length > 0) { // If the frame buffer has data
+      // Set frame parameters
       frame->type = _frameBuffer.frame[0].type;
       frame->id = _frameBuffer.frame[0].id;
       frame->length = _frameBuffer.frame[0].length;
+      // Copy frame data 
       for (int i = 0; i < frame->length; i++)
         frame->data[i] = _frameBuffer.frame[0].data[i];
-      _frameBufferMutex.unlock();
-      _remove_frame_by_index(0);
-      return true;
+      _frameBufferMutex.unlock(); // Free the mutex 
+      _remove_frame_by_index(0); // Remove the frame from the buffer 
+      return true; // Since successful, return true 
     } 
-    _frameBufferMutex.unlock();
+    _frameBufferMutex.unlock(); //  If the frame buffer has no data, free the mutex 
   }
-  return false;
+  return false; // Return flase if mutex does not lock within the given window of time 
 }
 
+// Receives a packet 
+// Concerns here:
+// Uses a command (0x90) that is only designated for the XBee Pro
+// The XBee S1 (which is what we are using) has two different commands for
+// receiving a 64-bit (0x80) and 16-bit (0x81) packets
 int XBeeAPIParser::rxPacket(char* payload, uint64_t* address) {
   apiFrame_t frame;
   bool foundFrame;
@@ -232,16 +250,22 @@ int XBeeAPIParser::rxPacket(char* payload, uint64_t* address) {
 bool XBeeAPIParser::send(apiFrame_t* frame) {
   bool success = true;
   char c;
-  uint32_t checksum = frame->type;
-  checksum = checksum + frame->id;
-  for (int i = 0; i < frame->length; i++) {
+
+  // To calculate the checksum of an API frame 
+  // 1) Add all bytes of the packet except for the start delimiter 0x7E and the length
+  // 2) Keep only the lowest 8 bits from the result 
+  // 3) Subtract from 0xFF
+  uint32_t checksum = frame->type; // Start with frame type
+  checksum = checksum + frame->id; // Add the first two data bytes
+  for (int i = 0; i < frame->length; i++) { // Sum all other bytes 
     checksum = checksum + frame->data[i];
   }
-  checksum = checksum & 0xFF;
-  checksum = 0xFF - checksum;
+  checksum = checksum & 0xFF; // Keep only 8 lowest bits 
+  checksum = 0xFF - checksum; // Subtract from 0xFF
+
   Timer t;
-  t.start();
-  if (_modemTxMutex.trylock_for(_time_out)) {
+  t.start(); // Start timer 
+  if (_modemTxMutex.trylock_for(_time_out)) { // Try to lock down mutex for 1s 
     // Replace all t.read()s with OS 6 equivalent
     // t.elapsed_time().count returns elapsed time as float, in us 
     while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {}

@@ -50,11 +50,11 @@ The frame structure for API mode is as follows:
 Any data received before the start delimiter is discarded and if the frame is not received corrrectly or the checksum fails, the XBee responds with a radio status frame indicating the nature of the failure.
 
 ### API frames 
-Below is a comprehensive list of the API frames. For more information, please visit [this link](). Note that both the table and link provide information on frames specific to **XBee 3 modules ONLY**. There are other pages you can visit for information on Legacy S1 or XBee S2C Pro modules. Frame descriptions are copied verbatim from Digi's official XBee 3 guide for the sake of accuracy. 
+Below is a comprehensive list of the API frames. For more information, please visit [this link](https://www.digi.com/resources/documentation/digidocs/90001539/#containers/cont_frame_descriptions.htm?TocPath=Frame%2520descriptions%257C_____0). Note that both the table and link provide information on frames specific to **XBee 3 modules ONLY**. There are other pages you can visit for information on Legacy S1 or XBee S2C Pro modules. Frame descriptions are copied verbatim from Digi's official XBee 3 guide for the sake of accuracy. 
 
 | Name | Hex value | Description |
 |--------|---------|-------------| 
-| Local AT command request | 0x08 | Used to query or set command parameters on the local device. | 
+| Local AT command request | 0x08 | Used to query or set command parameters on the local device. Require a two-ASCII-character AT command. A list of the avaliable AT commands is avaliable [here](https://www.digi.com/resources/documentation/digidocs/90001539/#containers/cont_at_cmds.htm?TocPath=AT%2520commands%257C_____0). | 
 | Queue local AT command request | 0x09 | Used to query or set queued command parameters on the local device. |
 | Transmit request | 0x10 | Used to send payload data as an RF packet to a specific destination. |
 | Explicit adressing command request | 0x11 | Used to send payload datqa as an RF packet to a specific destination using application-layer addressing fields. This frame is similar to 0x10 but with additional fields avaliable for user defined endpoints, cluster ID, and profile ID. |

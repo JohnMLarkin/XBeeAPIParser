@@ -271,21 +271,15 @@ bool XBeeAPIParser::send(apiFrame_t* frame) {
   checksum = 0xFF - checksum; // Subtract from 0xFF
 
   Timer t;
-  t.start(); // Start timer 
+  t.start(); // Start timer; entire send must complete before _time_out
   if (_modemTxMutex.trylock_for(_time_out)) { // Try to lock down mutex for 1s 
     while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
     // Once the timer timed out or data was detected at the serial port, move on from loop  
     if (_modem->writable() && success) { // If there is data, write out the start delimiter (0x7E)
       c = 0x7E;
       _modem->write(&c, 1);
-    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function
 
-    // ???
-    // The timer is never reset so either 
-    // a) the entire communication (all the while loops in this function) is meant to execute in less than 1s
-    // b) all while loops after the time is > 1s will just not be executed 
-    // c) there was a mistake in the code and the timer is meant to be reset before each while loop, 
-    //    giving each communication chunk 1s to be detected and sent out 
     while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
     // Once the timer timed out or data was detected at the serial port, move on from loop  
     if (_modem->writable() && success) {
@@ -545,7 +539,6 @@ void XBeeAPIParser::_pull_byte() {
 
 void XBeeAPIParser::_move_frame_to_buffer() {
   _updateBufferThreadId = osThreadGetId();
-
   while (true) {
     osSignalWait(0x06, osWaitForever);
     if (_frameBufferMutex.trylock_for(5*_time_out)) {
@@ -567,8 +560,12 @@ void XBeeAPIParser::_move_frame_to_buffer() {
   }
 }
 
+
+/** 
+ * Remove the frame at the given index from the frame buffer 
+ */
 void XBeeAPIParser::_remove_frame_by_index(int n) {
-  if (n< _frameBuffer.length) {
+  if (n< _frameBuffer.length) { // Only proceed if the given index is valid 
     for (int i = n + 1; i < _frameBuffer.length; i++) {
       for (int j = 0; j < _frameBuffer.frame[i].length; j++) {
         _frameBuffer.frame[i-1].data[j] = _frameBuffer.frame[i].data[j];

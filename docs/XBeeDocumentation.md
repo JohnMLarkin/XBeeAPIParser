@@ -82,18 +82,18 @@ XBeeAPIParser provides a clean interface for users to access and communicate wit
 * `partialFrame_t` contains a `apiFrame_t` as well as a char status and a received indicator. 
 
 ### Within the class 
-* `_modem`
-* `_partialFrame`
+* `_modem` is a BufferedSerial pointer used for serial data transfers.
+* `_partialFrame` 
 * `_frameBuffer`
-* `__time_out`
-* `_failedTransmits`
-* `_maxFailedTransmits`
-* `_isAssociated`
-* `_frameBufferMutex`
-* `_modemTxMutex`
-* `_updateBufferThread`
-* `_updateBufferThreadId`
-* `_frameAlertThreadId`
+* `__time_out` is an `int` representing a time quantitiy in ms, and is used throughout the code to measure the amount of time that the program is willing to sit around to wait for things to happen.
+* `_failedTransmits` is an `int` initialized as zero and which is incremented with each case of a failed transmission 
+* `_maxFailedTransmits` is an `int` initialized as 5, but is alterable. This value defines the maximum number of allowed failed transmissions. If this threshold is exceeded...
+* `_isAssociated` is a `volatile bool` indicating if a device is joining the network (is associated)  
+* `_frameBufferMutex` is a mutex protecting the shared frame buffer
+* `_modemTxMutex` 
+* `_updateBufferThread` is a thread in charge of updating the frame buffer 
+* `_updateBufferThreadId` is the thread ID of the local thread (`_updateBufferThread`) in charge of updating the frame buffer 
+* `_frameAlertThreadId` is the thread ID of the thread outside of the XBeeAPIParser which is controlling the XBee
 
 
 

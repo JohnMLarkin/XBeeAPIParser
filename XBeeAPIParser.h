@@ -33,7 +33,8 @@ typedef struct {
 
 typedef struct {
     apiFrame_t frame;
-    char status;
+    // Tracks the status of the frame (the byte location) when pulling a byte 
+    char status; 
     int rcvd;
 } partialFrame_t;
 

@@ -50,28 +50,36 @@ The frame structure for API mode is as follows:
 Any data received before the start delimiter is discarded and if the frame is not received corrrectly or the checksum fails, the XBee responds with a radio status frame indicating the nature of the failure.
 
 ### API frames 
-Below is a comprehensive list of the API frames. For more information, please visit [this link](). Note that the link provided gives information on frames specific to **XBee 3 modules ONLY**. There are other pages you can visit for information on Legacy S1 or XBee S2C Pro modules. 
+Below is a comprehensive list of the API frames. For more information, please visit [this link](). Note that both the table and link provide information on frames specific to **XBee 3 modules ONLY**. There are other pages you can visit for information on Legacy S1 or XBee S2C Pro modules. Frame descriptions are copied verbatim from Digi's official XBee 3 guide for the sake of accuracy. 
 
 | Name | Hex value | Description |
 |--------|---------|-------------| 
-| Local AT command request | 0x08 | 
-| Queue local AT command request | 0x09
-| Transmit request | 0x10
-| Explicit adressing command request | 0x11
-| Remote AT command request | 0x17 |
-| Create source route | 0x21 |
-| Register joining device | 0x24 |
-| BLE unlock request | 0x2C |
-| User data relay input | 0x2D
-| Secure session control | 0x2E
-| Local AT command response | 0x97 
-| Extended modem status | 0x98 
-| Route record indicator | 0xA1
-| Registration status | 0xA4
-| Many-to-one route request indicator | 0xA3
-| BLE unlock response | 0xAC
-| User data relay output | 0xAD
-| Secure session response |0xAE
+| Local AT command request | 0x08 | Used to query or set command parameters on the local device. | 
+| Queue local AT command request | 0x09 | Used to query or set queued command parameters on the local device. |
+| Transmit request | 0x10 | Used to send payload data as an RF packet to a specific destination. |
+| Explicit adressing command request | 0x11 | Used to send payload datqa as an RF packet to a specific destination using application-layer addressing fields. This frame is similar to 0x10 but with additional fields avaliable for user defined endpoints, cluster ID, and profile ID. |
+| Remote AT command request | 0x17 | Used to query or set AT command parameters on a remote device. |
+| Create source route | 0x21 | Used to create an entry in the source route table of a local device. A source route specifies the complete route a packet traverses to get from source to destination. |
+| Register joining device | 0x24 | Used to securely register a joining device to a trust center. |
+| BLE unlock request | 0x2C | Used to authenticate a connection on the BT interface and unlock the processing of AT command frames across this interface. |
+| User data relay input | 0x2D | Used to relay user data between local interfaces. | 
+| Secure session control | 0x2E | Used to control a secure session between a client and a server. |
+| Local AT command response | 0x88 | This frame type is emitted in response to a local AT command request. |
+| Modem status | 0x8A | This frame type is emitted in response to specific conditions. The status field of this frame indicates the device behavior. |
+|Extended transmit status | 0x8B | This frame type is emitted when a network transmission request completes. The status field of this frame indicates whether the request succeeded or failed and the reason. |
+| Transmit status | 0x89 | This frame type is emitted when a transmit request completes. |
+| Receive packet | 0x90 | This frame type is emitted when a device configured with standard API output receives an RF data packet.|
+| Explicit receive indicator | 0x91| This frame type is emitted when a device configured with explicit API output receives an RF data packet. |
+| I/O sample indicator | 0x92 | This frame type is emitted when a device configured with standard API output receives an I/O sample from a remote device.|
+| Node identification indicator | 0x95 | This frame type is emitted when a node identification broadcast is received. |
+| Remote AT command response | 0x97 | This frame is emitted in response to a 0x17 (remote AT command) request. |
+| Extended modem status | 0x98 | This frame type can be used to troubleshoot Zigbee network association |
+| Route record indicator | 0xA1 | Contains the routing information for a remote device on the network |
+| Registration status | 0xA4 | Emitted in response to registering a device to a trust center using the 0x24 (register joining device) frame. Indicates whether the registration attempt succeeded or not. |
+| Many-to-one route request indicator | 0xA3 | Emitted on devices that receive a many-to-one route request from a network concentrator. |
+| BLE unlock response | 0xAC | Emitted in response to a 0x2C (BLE unlock request)frame. |
+| User data relay output | 0xAD | Emitted when user data is relayed to the serial prot from a local interface. |
+| Secure session response |0xAE | This frame type is a response to a 0x2E (secure session control) frame. Indicates whether the secure session operation was successful or not. |
 
 ## How the library works 
 XBeeAPIParser provides a clean interface for users to access and communicate with XBee devices in a network. The library accomplishes this through the use of multiple structures and key class variables, as outlined below. 

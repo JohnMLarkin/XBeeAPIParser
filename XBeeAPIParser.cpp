@@ -1,17 +1,33 @@
 #include <mbed.h>
 #include "XBeeAPIParser.h"
 
+/**
+ * @brief Construct a new XBeeAPIParser::XBeeAPIParser object from pointer
+ * 
+ * @param modem pointer to a BufferedSerial object connected to the XBee
+ */
 XBeeAPIParser::XBeeAPIParser(BufferedSerial* modem){ 
   // Since BufferedSerial is non-copyable, change assignment of 
   // tx, rx, and baud rate from constructor assignment to passing a pointer 
   // and assigning it to the XBeeAPIParser private BufferedSerial pointer
   _modem = modem; 
+  _init();
+}
+/**
+ * @brief Construct a new XBeeAPIParser::XBeeAPIParser object from pin names
+ * 
+ * @param tx TX pin linked to XBee
+ * @param rx RX pin linked to XBee
+ * @param baud 
+ */
+XBeeAPIParser::XBeeAPIParser(PinName tx, PinName rx, int baud = 921600){ 
+  // Create a pointer to a BufferedSerial from pins
+  _modem = new BufferedSerial(tx, rx, baud); 
+  _init();
+}
 
-  // for (int i = 0; i < MAX_INCOMING_FRAMES; i++) {
-  //   _inFramesLengths[i] = 0;
-  // }
-  // _numInFrames = 0;
-  // _inBufferLength = -1;
+// Move all of the stuff common to the constructor methods to one place
+void XBeeAPIParser::_init() {
   for (int i = 0; i < MAX_INCOMING_FRAMES; i++) {
     _frameBuffer.frame[i].type = 0xFF; // Set frame type to generic 
     _frameBuffer.frame[i].id = 0x00;

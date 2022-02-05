@@ -65,9 +65,11 @@ private:
     void _move_frame_to_buffer();
     void _make_AT_frame(string cmd, apiFrame_t* frame);
     void _make_AT_frame(string cmd, string param, apiFrame_t* frame);
+    void _init();
 
 public:
     XBeeAPIParser(BufferedSerial* modem);
+    XBeeAPIParser(PinName tx, PinName rx, int baud = 921600);
     bool readable();
     bool associated();
     bool send(apiFrame_t* frame);

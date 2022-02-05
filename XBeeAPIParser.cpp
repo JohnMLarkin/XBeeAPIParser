@@ -40,7 +40,7 @@ void XBeeAPIParser::_init() {
   _isAssociated = false; 
   _failedTransmits = 0;
   _maxFailedTransmits = 5;
-  _frameAlertThreadId = NULL; // Set the frame alert thread id to null
+  _frameAlertThreadPtr = NULL; // Set the frame alert thread ptr to null
   _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer)); // Start the update buffer thread and attach it to the move_frame_to_buffer function
   _modem->attach(callback(this, &XBeeAPIParser::_pull_byte), SerialBase::RxIrq);
 }
@@ -338,8 +338,8 @@ bool XBeeAPIParser::send(apiFrame_t* frame) {
   return success; // Return success boolean 
 }
 
-void XBeeAPIParser::set_frame_alert_thread_id(osThreadId_t threadID) {
-  _frameAlertThreadId = threadID;
+void XBeeAPIParser::set_frame_alert_thread_id(Thread* alert_thread_ptr) {
+  _frameAlertThreadPtr = alert_thread_ptr;
 }
 
 void XBeeAPIParser::set_max_failed_transmits(int maxFails) {
@@ -533,8 +533,8 @@ void XBeeAPIParser::_pull_byte() {
               _partialFrame.status = 0x00;
             } else {
               _modem->attach(NULL); // Stop interrupts on serial input
-              _partialFrame.status = 0x06; 
-              osSignalSet(_updateBufferThreadId, 0x06); // Trigger copy to frame buffer outside of ISR
+              _partialFrame.status = 0x06;
+              _updateBufferThread.flags_set(0x01); // Trigger copy to frame buffer outside of ISR
             }
           } else { // Checksum doesn't match.  Bad frame!
             _partialFrame.status = 0x00; // There should be some error signaling
@@ -548,9 +548,8 @@ void XBeeAPIParser::_pull_byte() {
 }
 
 void XBeeAPIParser::_move_frame_to_buffer() {
-  _updateBufferThreadId = osThreadGetId();
   while (true) {
-    osSignalWait(0x06, osWaitForever);
+    ThisThread::flags_wait_all(0x01);
     if (_frameBufferMutex.trylock_for(5*_time_out)) {
       if (_frameBuffer.length == MAX_INCOMING_FRAMES) {  // Buffer full, drop oldest frame
         _remove_frame_by_index(0);
@@ -564,7 +563,7 @@ void XBeeAPIParser::_move_frame_to_buffer() {
       _frameBuffer.length++;
       _frameBufferMutex.unlock();
       _partialFrame.status = 0x00;
-      if (_frameAlertThreadId) osSignalSet(_frameAlertThreadId, 0x01); 
+      if (_frameAlertThreadPtr) _frameAlertThreadPtr->flags_set(0x01);
       _modem->attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
     }
   }

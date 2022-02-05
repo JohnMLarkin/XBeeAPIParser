@@ -1,6 +1,7 @@
 /** XBee API buffered frame parser
  * 
  *  @author John M. Larkin (jlarkin@whitworth.edu)
+ *  @author Lydia I. Calderon-Aceituno (lcalderon-aceituno24@my.whitworth.edu)
  *  @version 1.1
  *  @date 2021
  *  @copyright MIT License
@@ -32,7 +33,8 @@ typedef struct {
 
 typedef struct {
     apiFrame_t frame;
-    char status;
+    // Tracks the status of the frame (the byte location) when pulling a byte 
+    char status; 
     int rcvd;
 } partialFrame_t;
 
@@ -46,15 +48,15 @@ private:
     int _failedTransmits;
     int _maxFailedTransmits;
 
-    volatile bool _isAssociated;
+    volatile bool _isAssociated; 
 
     // RTOS management
     // Mutex _partialFrameMutex;
     Mutex _frameBufferMutex;
     Mutex _modemTxMutex;
     Thread _updateBufferThread;
-    osThreadId _updateBufferThreadId;
-    osThreadId _frameAlertThreadId;
+    osThreadId_t _updateBufferThreadId;
+    osThreadId_t _frameAlertThreadId;
 
     void _pull_byte();
     void _verify_association();
@@ -65,7 +67,7 @@ private:
     void _make_AT_frame(string cmd, string param, apiFrame_t* frame);
 
 public:
-    XBeeAPIParser(PinName tx, PinName rx, int baud = 921600);
+    XBeeAPIParser(BufferedSerial* modem);
     bool readable();
     bool associated();
     bool send(apiFrame_t* frame);

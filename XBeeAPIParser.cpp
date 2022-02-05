@@ -1,10 +1,9 @@
-#include "mbed.h"
-#include "rtos.h"
+#include <mbed.h>
 #include "XBeeAPIParser.h"
 
 XBeeAPIParser::XBeeAPIParser(BufferedSerial* modem){ 
-  // Since BufferedSerial is non-copyable change assignment of 
-  // tx, rx, and baud rate from via constructor to passing a pointer 
+  // Since BufferedSerial is non-copyable, change assignment of 
+  // tx, rx, and baud rate from constructor assignment to passing a pointer 
   // and assigning it to the XBeeAPIParser private BufferedSerial pointer
   _modem = modem; 
 
@@ -14,153 +13,184 @@ XBeeAPIParser::XBeeAPIParser(BufferedSerial* modem){
   // _numInFrames = 0;
   // _inBufferLength = -1;
   for (int i = 0; i < MAX_INCOMING_FRAMES; i++) {
-    _frameBuffer.frame[i].type = 0xFF;
+    _frameBuffer.frame[i].type = 0xFF; // Set frame type to generic 
     _frameBuffer.frame[i].id = 0x00;
     _frameBuffer.frame[i].length = 0;
   }
   _frameBuffer.length = 0;
-  _partialFrame.status = 0x00;
-  _time_out = 1000;
-  _isAssociated = false;
+  _partialFrame.status = 0x00; // Set status to "all good"
+  _time_out = 1000; // Timing variable used throughout 
+  _isAssociated = false; 
   _failedTransmits = 0;
   _maxFailedTransmits = 5;
-  _frameAlertThreadId = NULL;
-  _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer));
-  _modem->attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
+  _frameAlertThreadId = NULL; // Set the frame alert thread id to null
+  _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer)); // Start the update buffer thread and attach it to the move_frame_to_buffer function
+  _modem->attach(callback(this, &XBeeAPIParser::_pull_byte), SerialBase::RxIrq);
 }
 
 bool XBeeAPIParser::associated() {
   if (!_isAssociated) {
-    _verify_association();
+    _verify_association(); // Check if the device is associated 
   }
   return _isAssociated;
 }
 
-/** find_frame
- *   Returns frame with specified frame type and frame ID. The frame is also
- *     removed from the buffer.
+/** 
+ * Returns frame with specified frame type and frame ID. The frame is also 
+ * removed from the buffer.
  * 
- *   @returns true if match was found
+ * @returns true if match was found
  */
 bool XBeeAPIParser::find_frame(char frameType, char frameID, apiFrame_t* frame) {
-  if (_frameBufferMutex.trylock_for(_time_out)) {
+  if (_frameBufferMutex.trylock_for(_time_out)) { // Try to lock mutex for 1s. true if the mutex was acquired, false otherwise.
     if (_frameBuffer.length>0) {
-      for (int i = 0; i < _frameBuffer.length; i++) {
-        if ((_frameBuffer.frame[i].type == frameType) && (_frameBuffer.frame[i].id == frameID)) {
+      for (int i = 0; i < _frameBuffer.length; i++) { // For each frame in the frame buffer 
+        if ((_frameBuffer.frame[i].type == frameType) && (_frameBuffer.frame[i].id == frameID)) { // If the frame matches the specifications requested 
+          // Set frame parameters 
           frame->type = frameType;
           frame->id = frameID;
           frame->length = _frameBuffer.frame[i].length;
+          // Copy over frame data 
           for (int j = 0; j < frame->length; j++)
             frame->data[j] = _frameBuffer.frame[i].data[j];
-          _frameBufferMutex.unlock();
-          _remove_frame_by_index(i);
+          _frameBufferMutex.unlock(); // Now that all data has been copied from the buffer, unlock the mutex 
+          _remove_frame_by_index(i); // Remove the frame from the buffer 
           return true;
         }
       }
     }
-    _frameBufferMutex.unlock();
+    _frameBufferMutex.unlock(); // If the frame buffer is empty, unlock the mutex 
   }
   return false;
 }
 
-/** find_frame
- *   Returns frame with specified frame type. The frame is also
- *     removed from the buffer.
+/** 
+ * Returns generic frame with specified frame type. The frame is also 
+ * removed from the buffer.
  * 
- *   @returns true if match was found
+ * @returns true if match was found
  */
 bool XBeeAPIParser::find_frame(char frameType, apiFrame_t* frame) {
   return find_frame(frameType, 0xFF, frame);
 }
 
+/** 
+ * Clears all frames of a specified type and ID from the frame buffer 
+ */
 void XBeeAPIParser::flush_old_frames(char frameType, char frameID) {
   apiFrame_t frame;
-  while (find_frame(frameType, frameID, &frame));
+  while (find_frame(frameType, frameID, &frame)); // Find all frames with the specified ID and type and clear them from the frame buffer 
 }
 
+
+/** 
+ * @returns 0 if response frame not found | 1 if response frame's status code is 1 (ERROR), 2 (INVALID CMD), or 3 (INVALID PARAMETER) 
+ * | 64-bit address if sucessful
+ */
 uint64_t XBeeAPIParser::get_address(string ni) {
   uint64_t address;
-  Timer t;
+  Timer t; // Initialize timer 
   char frameID;
   char status;
   apiFrame_t frame;
   int len;
   bool foundFrame;
-  _make_AT_frame("DN", ni, &frame);
-  flush_old_frames(frame.type, frame.id);
-  frameID = frame.id;
-  send(&frame);
+  _make_AT_frame("DN", ni, &frame); // Make local AT command frame and set command to destination node 
+  flush_old_frames(frame.type, frame.id); // Clear old DN frames 
+  frameID = frame.id; // Collect frame id (0x92 for DN)
+  send(&frame); // Send the DN frame 
   ThisThread::sleep_for(5ms);
-  t.start();
+  t.start(); // Start timer 
   foundFrame = false;
-  // Change read_ms to elapsed_time
-  // elapsed_time returns the time passed in us as a chrono duration
-  // To compare this to the integer "time_out", we must cast the chronoduration as ms
-  while (duration_cast<milliseconds>(t.elapsed_time()).count()<10*_time_out) && (!foundFrame)) {
+  // For 10s or until one is found, search for local at command response frames in the frame buffer 
+  while (((t.elapsed_time().count()*0.001) < 10*_time_out) && (!foundFrame)) {
+    foundFrame = find_frame(0x88, frameID, &frame); // Search for local AT command response frames (0x88)
+    if (!foundFrame) ThisThread::sleep_for(5ms);
+  }
+  if (!foundFrame) printf("Timed out after DN!\r\n"); // If not successful in finding the response frame
+  if ((!foundFrame) || (frame.length != 3)) return 0; // If the frame was not found or has insufficient data, return 0 
+  if (!((frame.data[0] = 'D') && (frame.data[1] == 'N') && (frame.data[2]==0))) return 1; // If the response frame command is incorrect or the status code is not 0 (OKAY), return 1
+  // If everything is okay with the response frame, move on to collecting the 64-bit destination address 
+  // Local AT command frames can be used to collect the address by combining the DH and DL AT commands 
+
+  // Begin with DH, which is used to read the upper 32 bits of the 64-bit adress 
+  // make local AT command frame and set command to Desitnation Address High
+  _make_AT_frame("DH", &frame); 
+  flush_old_frames(frame.type, frame.id); // Clear old DH frames 
+  frameID = frame.id; // Collect frame id (0x8C for DH)
+  send(&frame); // Send DH frame 
+  t.reset(); // Reset timer 
+  foundFrame = false;
+  // For 2s or until it is found, attempt to find the response frame (0x88)
+  while (((t.elapsed_time().count()*0.001) <2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
-  if (!foundFrame) printf("Timed out after DN!\r\n");
-  if ((!foundFrame) || (frame.length != 3)) return 0;
-  if (!((frame.data[0] = 'D') && (frame.data[1] == 'N') && (frame.data[2]==0))) return 1;
-  _make_AT_frame("DH", &frame);
-  flush_old_frames(frame.type, frame.id);
-  frameID = frame.id;
-  send(&frame);
-  t.reset();
-  foundFrame = false;
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
-    foundFrame = find_frame(0x88, frameID, &frame);
-    if (!foundFrame) ThisThread::sleep_for(5ms);
-  }
-  if (!foundFrame) printf("Timed out after DH!\r\n");
-  if ((!foundFrame) || (frame.length != 7)) return 0;
-  address = 0;
+  if (!foundFrame) printf("Timed out after DH!\r\n"); // If not successful in finding the response frame in time
+  if ((!foundFrame) || (frame.length != 7)) return 0; // If the frame was not found or has insufficient data, return 0 
+  // If nothing went wrong with getting the response frame 
+  address = 0; // Clear address to prep for loading 
+  // Collect data from response frame 
   for (int i = 0; i < 4; i++) {
     address = (address << 8) | frame.data[3+i];
   }
+  // To get the second half of the address, send a DL command frame 
   _make_AT_frame("DL", &frame);
-  flush_old_frames(frame.type, frame.id);
-  frameID = frame.id;
-  send(&frame);
-  t.reset();
+  flush_old_frames(frame.type, frame.id); // Clear old DL frames 
+  frameID = frame.id; // Collect frame id (0x90 for DL)
+  send(&frame); // Send DL frame 
+  t.reset(); // Reset timer 
   foundFrame = false;
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  // For 2s or until it is found, attempt to find the response frame (0x88)
+  while (((t.elapsed_time().count()*0.001) <2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
-  if (!foundFrame) printf("Timed out after DL!\r\n");
-  if ((!foundFrame) || (frame.length != 7)) return 0;
+  if (!foundFrame) printf("Timed out after DL!\r\n"); // If not successful in finding the response frame in time 
+  if ((!foundFrame) || (frame.length != 7)) return 0; // If the frame was not found or has insufficient data, return 0 
+  // If nothing went wrong with getting the response frame, collect the lower 32 bits of the address 
   for (int i = 0; i < 4; i++) {
     address = (address << 8) | frame.data[3+i];
   }
-  return address;
+  return address; // Return full 64-bit address 
 }
 
+/** 
+ * @returns 
+ * RSSI (Received Signal Strength Indicator) in -dBm of the last received FR data packet 
+ * | 0 if the XBee has been restarted and has not yet received a packet | 0xFF if the response 
+ * does not come through 
+ */
 char XBeeAPIParser::last_RSSI() {
   Timer t;
   char frameID;
   char rssi = 0xFF;
   apiFrame_t frame;
   bool foundFrame;
-  _make_AT_frame("DB", &frame);
-  frameID = frame.id;
-  send(&frame);
-  t.start();
+  _make_AT_frame("DB", &frame); // Make DB frame 
+  frameID = frame.id; // Collect id 
+  send(&frame); // Send DB frame 
+  t.start(); // Start timer 
   foundFrame = false;
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  // For 2s or until it is found (whichever is shorter), attempt to find the response frame  
+  while (((t.elapsed_time().count()*0.001)<2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
-  if (!foundFrame) return 0xFF;
-  if (frame.length == 6) {
+  if (!foundFrame) return 0xFF; // If the frame is not found, return 0xFF
+  if (frame.length == 6) { // If the frame has sufficient data and the command status is good, collect the RSSI
     if ((frame.data[2]=='D') && (frame.data[3]=='B')&& (frame.data[4]==0)) {
       rssi = frame.data[5];
     }
   }
-  return rssi;
+  return rssi; // Return RSSI value 
 }
 
+/** 
+ * Checks if there are any frames in the frame buffer 
+ * 
+ * @returns true if there are frames in the frame buffer, false otherwise
+ */
 bool XBeeAPIParser::readable() {
   bool hasFrames = false;
   if (_frameBufferMutex.trylock_for(_time_out)) {
@@ -170,92 +200,132 @@ bool XBeeAPIParser::readable() {
   return hasFrames;
 }
 
+/** 
+ * Returns the frame in the first index of the frame buffer 
+ * 
+ * @returns true if successful
+ */
 bool XBeeAPIParser::get_oldest_frame(apiFrame_t* frame) {
+  // Try to lock the frame buffer mutex for 1s
   if (_frameBufferMutex.trylock_for(_time_out)) {
-    if (_frameBuffer.length > 0) {
+    if (_frameBuffer.length > 0) { // If the frame buffer has data
+      // Set frame parameters
       frame->type = _frameBuffer.frame[0].type;
       frame->id = _frameBuffer.frame[0].id;
       frame->length = _frameBuffer.frame[0].length;
+      // Copy frame data 
       for (int i = 0; i < frame->length; i++)
         frame->data[i] = _frameBuffer.frame[0].data[i];
-      _frameBufferMutex.unlock();
-      _remove_frame_by_index(0);
-      return true;
+      _frameBufferMutex.unlock(); // Free the mutex 
+      _remove_frame_by_index(0); // Remove the frame from the buffer 
+      return true; // Since successful, return true 
     } 
-    _frameBufferMutex.unlock();
+    _frameBufferMutex.unlock(); //  If the frame buffer has no data, free the mutex 
   }
-  return false;
+  return false; // Return flase if mutex does not lock within the given window of time 
 }
 
+/** 
+ * Checks if the receive packet frame has been emitted. 
+ * Note that 0x90 (receive packet frame type) is emitted when 
+ * a device in standard API mode receives an RF data packet 
+ * 
+ * @returns unknown 
+ */
 int XBeeAPIParser::rxPacket(char* payload, uint64_t* address) {
-  apiFrame_t frame;
-  bool foundFrame;
+  apiFrame_t frame; // Create a blank frames 
+  bool foundFrame; 
   uint64_t who = 0;
-  foundFrame = find_frame(0x90, &frame);
-  if (foundFrame) {
+  foundFrame = find_frame(0x90, &frame); // Find a receive packet (0x90) frame in the frame buffer 
+  if (foundFrame) { // If the receive packet frame is found 
     for (int i = 0; i < 8; i++) {
-      who = (who << 8) | frame.data[i];
+      who = (who << 8) | frame.data[i]; // Copy over the 64-bit source address (the sender's address)
     }
-    *address = who;
+    *address = who; // Set address 
     for (int i = 0; i < (frame.length-9); i++) {
-      payload[i] = frame.data[i+11];
+      payload[i] = frame.data[i+11]; // Copy over the received data 
     }
-    return (frame.length-11);
+    return (frame.length-11); // Not sure why we are pulling from this particular index 
   } else return 0;
 }
 
+/** 
+ * Writes out a given frame 
+ * 
+ * @returns true if successful, else false 
+ */
 bool XBeeAPIParser::send(apiFrame_t* frame) {
   bool success = true;
-  uint32_t checksum = frame->type;
-  checksum = checksum + frame->id;
-  for (int i = 0; i < frame->length; i++) {
+  char c;
+
+  // To calculate the checksum of an API frame 
+  // 1) Add all bytes of the packet except for the start delimiter 0x7E and the length
+  // 2) Keep only the lowest 8 bits from the result 
+  // 3) Subtract from 0xFF
+  uint32_t checksum = frame->type; // Start with frame type
+  checksum = checksum + frame->id; // Add the first two data bytes
+  for (int i = 0; i < frame->length; i++) { // Sum all other bytes 
     checksum = checksum + frame->data[i];
   }
-  checksum = checksum & 0xFF;
-  checksum = 0xFF - checksum;
+  checksum = checksum & 0xFF; // Keep only 8 lowest bits 
+  checksum = 0xFF - checksum; // Subtract from 0xFF
+
   Timer t;
-  t.start();
-  if (_modemTxMutex.trylock_for(_time_out)) {
-    // Replace all t.read()s with OS 6 equivalent 
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc(0x7E);
-    } else success = false; // Timed out
+  t.start(); // Start timer; entire send must complete before _time_out
+  if (_modemTxMutex.trylock_for(_time_out)) { // Try to lock down mutex for 1s 
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    if (_modem->writable() && success) { // If there is data, write out the start delimiter (0x7E)
+      c = 0x7E;
+      _modem->write(&c, 1);
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function
 
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc((frame->length+2) >> 8);
-    } else success = false; // Timed out
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    if (_modem->writable() && success) {
+      c = (frame->length+2) >> 8; // Write out length MSB
+      _modem->write(&c, 1);
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
     
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc((frame->length+2) & 0xFF);
-    } else success = false; // Timed out
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    if (_modem->writable() && success) {
+      c = (frame->length+2) & 0xFF; // Write out length LSB 
+      _modem->write(&c, 1);
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
     
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc(frame->type);
-    } else success = false; // Timed out
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    if (_modem->writable() && success) {
+      c = frame->type; // Write out frame type 
+      _modem->write(&c, 1);
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
 
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc(frame->id);
-    } else success = false; // Timed out
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    if (_modem->writable() && success) {
+      c = frame->id; // Wrtie out frame ID 
+      _modem->write(&c, 1);
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
 
     for (int i = 0; i < frame->length; i++) {
-      while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-      if (_modem->writeable() && success) {
-        _modem->putc(frame->data[i]);
-      } else success = false; // Timed out
+      while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+      // Once the timer timed out or data was detected at the serial port, move on from loop  
+      if (_modem->writable() && success) {
+        c = frame->data[i]; // Write out each byte of the data, one at a time 
+        _modem->write(&c, 1);
+      } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
     }
 
-    while ((duration_cast<seconds>(t.elapsed_time()).count() < _time_out) && (!_modem->writeable())) {}
-    if (_modem->writeable() && success) {
-      _modem->putc(checksum);
-    } else success = false; // Timed out
+    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
+    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    if (_modem->writable() && success) {
+      c = checksum; // Write out the final byte (checksum) 
+      _modem->write(&c, 1);
+    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
     _modemTxMutex.unlock(); 
   }
-  return success;
+  return success; // Return success boolean 
 }
 
 void XBeeAPIParser::set_frame_alert_thread_id(osThreadId_t threadID) {
@@ -270,6 +340,7 @@ void XBeeAPIParser::set_timeout(int time_ms) {
   if ((time_ms > 0) && (time_ms < 5000)) _time_out = time_ms;
 }
 
+// ???
 int XBeeAPIParser::txAddressed(uint64_t address, char* payload, int len) {
   if (len>(MAX_FRAME_LENGTH)) return -1;
   apiFrame_t frame;
@@ -293,7 +364,7 @@ int XBeeAPIParser::txAddressed(uint64_t address, char* payload, int len) {
   t.start();
   foundFrame = false;
   ThisThread::sleep_for(7ms);
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  while (((t.elapsed_time().count()*0.001) < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x89, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(7ms);
   }
@@ -326,7 +397,7 @@ void XBeeAPIParser::_disassociate() {
   send(&frame);
   t.start();
   foundFrame = false;
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  while (((t.elapsed_time().count()*0.001) < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -341,19 +412,38 @@ void XBeeAPIParser::_make_AT_frame(string cmd, apiFrame_t* frame) {
   _make_AT_frame(cmd, "", frame);
 }
 
+/** 
+ * Makes a local AT command request frame (0x08)
+ * This frame type is used to query or set command parameters on the local device 
+ */
 void XBeeAPIParser::_make_AT_frame(string cmd, string param, apiFrame_t* frame) {
   frame->type = 0x08; // Local AT command frame
-  if (cmd.length()==2) {
-    frame->data[0] = cmd[0];
-    frame->data[1] = cmd[1];
+  if (cmd.length()==2) { 
+    // Set AT command
+    frame->data[0] = cmd[0]; 
+    frame->data[1] = cmd[1]; 
   }
-  frame->id = cmd[0] + cmd[1];
-  if (param.length()>0) {
+  frame->id = cmd[0] + cmd[1]; // Set the frame id to the sum of the first two characters in the given string
+  // The frame id identifies the data frame for the host to correlate with a subsequent response 
+  if (param.length()>0) { // Only enter this if a parameter is explicitly given
     for (int i = 0; i < param.length(); i++)
       frame->data[2+i] = param[i];
   }
-  frame->length = 2 + param.length();
+  frame->length = 2 + param.length(); // Set the length of the data 
 }
+
+/** The NEW way forward
+while (true) {
+  while (_modem->readable() and other stuff) {
+    existing stuff happens;
+  }
+  if (frame ready to move) {
+    do the frame moving stuff
+  }
+  ThisThread::sleep_for(10ms);
+}
+*/
+
 
 void XBeeAPIParser::_pull_byte() {
   char buff;
@@ -449,7 +539,6 @@ void XBeeAPIParser::_pull_byte() {
 
 void XBeeAPIParser::_move_frame_to_buffer() {
   _updateBufferThreadId = osThreadGetId();
-
   while (true) {
     osSignalWait(0x06, osWaitForever);
     if (_frameBufferMutex.trylock_for(5*_time_out)) {
@@ -471,8 +560,12 @@ void XBeeAPIParser::_move_frame_to_buffer() {
   }
 }
 
+
+/** 
+ * Remove the frame at the given index from the frame buffer 
+ */
 void XBeeAPIParser::_remove_frame_by_index(int n) {
-  if (n< _frameBuffer.length) {
+  if (n< _frameBuffer.length) { // Only proceed if the given index is valid 
     for (int i = n + 1; i < _frameBuffer.length; i++) {
       for (int j = 0; j < _frameBuffer.frame[i].length; j++) {
         _frameBuffer.frame[i-1].data[j] = _frameBuffer.frame[i].data[j];
@@ -486,26 +579,28 @@ void XBeeAPIParser::_remove_frame_by_index(int n) {
 }
 
 void XBeeAPIParser::_verify_association() {
-  Timer t;
-  apiFrame_t frame;
+  Timer t; // Create timer object 
+  apiFrame_t frame; // Create frame object 
   bool foundFrame;
-  char status = 0xFE;
-  _make_AT_frame("AI", &frame);
-  char frameID = frame.id;
-  _isAssociated = false;
-  foundFrame = false;
-  send(&frame);
-  t.start();
-  while ((duration_cast<milliseconds>(t.elapsed_time()).count()<2*_time_out) && (!foundFrame)) {
+  char status = 0xFE; // Set the status
+  _make_AT_frame("AI", &frame);  // Make local AT command frame and set command to association indication  
+  char frameID = frame.id; // Collect the frame id (0x8A for AI)
+  _isAssociated = false; // Set default value to false 
+  foundFrame = false; // Set default value to false 
+  send(&frame); // Write out the frame 
+  t.start(); // Start the timer 
+  // While the elapsed time in milliseconds is less than 2000ms (2s) and while the frame
+  // has not been found, check if the frame has been found
+  while (((t.elapsed_time().count()*0.001) < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
-  if (foundFrame) {
+  if (foundFrame) { // If the frame is found 
     if ((frame.data[0]=='A') && (frame.data[1]=='I') && (frame.data[2]==0)) {
-      status = frame.data[3];
+      status = frame.data[3]; // Collect the modem status from the fourth index of the frame
     }
   }
-  if (status == 0x00) _isAssociated = true;
+  if (status == 0x00) _isAssociated = true; // If status is 0x00 (end device successfully associated), return true 
 }
 
 

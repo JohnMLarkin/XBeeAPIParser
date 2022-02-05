@@ -13,6 +13,7 @@ XBeeAPIParser::XBeeAPIParser(BufferedSerial* modem){
   _modem = modem; 
   _init();
 }
+
 /**
  * @brief Construct a new XBeeAPIParser::XBeeAPIParser object from pin names
  * 
@@ -35,7 +36,7 @@ void XBeeAPIParser::_init() {
   }
   _frameBuffer.length = 0;
   _partialFrame.status = 0x00; // Set status to "all good"
-  _time_out = 1000; // Timing variable used throughout 
+  _time_out = 1000ms; // Timing variable used throughout 
   _isAssociated = false; 
   _failedTransmits = 0;
   _maxFailedTransmits = 5;
@@ -58,7 +59,7 @@ bool XBeeAPIParser::associated() {
  * @returns true if match was found
  */
 bool XBeeAPIParser::find_frame(char frameType, char frameID, apiFrame_t* frame) {
-  if (_frameBufferMutex.trylock_for(_time_out)) { // Try to lock mutex for 1s. true if the mutex was acquired, false otherwise.
+  if (_frameBufferMutex.trylock_for(_time_out)) { // Try to lock mutex for time given. true if the mutex was acquired, false otherwise.
     if (_frameBuffer.length>0) {
       for (int i = 0; i < _frameBuffer.length; i++) { // For each frame in the frame buffer 
         if ((_frameBuffer.frame[i].type == frameType) && (_frameBuffer.frame[i].id == frameID)) { // If the frame matches the specifications requested 
@@ -101,7 +102,7 @@ void XBeeAPIParser::flush_old_frames(char frameType, char frameID) {
 
 /** 
  * @returns 0 if response frame not found | 1 if response frame's status code is 1 (ERROR), 2 (INVALID CMD), or 3 (INVALID PARAMETER) 
- * | 64-bit address if sucessful
+ * | 64-bit address if successful
  */
 uint64_t XBeeAPIParser::get_address(string ni) {
   uint64_t address;
@@ -118,8 +119,8 @@ uint64_t XBeeAPIParser::get_address(string ni) {
   ThisThread::sleep_for(5ms);
   t.start(); // Start timer 
   foundFrame = false;
-  // For 10s or until one is found, search for local at command response frames in the frame buffer 
-  while (((t.elapsed_time().count()*0.001) < 10*_time_out) && (!foundFrame)) {
+  // For 10 times longer than the single-step timeout or until one is found, search for local at command response frames in the frame buffer 
+  while ((t.elapsed_time() < 10*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame); // Search for local AT command response frames (0x88)
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -137,8 +138,8 @@ uint64_t XBeeAPIParser::get_address(string ni) {
   send(&frame); // Send DH frame 
   t.reset(); // Reset timer 
   foundFrame = false;
-  // For 2s or until it is found, attempt to find the response frame (0x88)
-  while (((t.elapsed_time().count()*0.001) <2*_time_out) && (!foundFrame)) {
+  // For 2 times the single-step timeout or until it is found, attempt to find the response frame (0x88)
+  while ((t.elapsed_time() < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -157,8 +158,8 @@ uint64_t XBeeAPIParser::get_address(string ni) {
   send(&frame); // Send DL frame 
   t.reset(); // Reset timer 
   foundFrame = false;
-  // For 2s or until it is found, attempt to find the response frame (0x88)
-  while (((t.elapsed_time().count()*0.001) <2*_time_out) && (!foundFrame)) {
+  // For 2 times the single-step timeout or until it is found, attempt to find the response frame (0x88)
+  while ((t.elapsed_time() <2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -188,8 +189,8 @@ char XBeeAPIParser::last_RSSI() {
   send(&frame); // Send DB frame 
   t.start(); // Start timer 
   foundFrame = false;
-  // For 2s or until it is found (whichever is shorter), attempt to find the response frame  
-  while (((t.elapsed_time().count()*0.001)<2*_time_out) && (!foundFrame)) {
+  // For 2 times the single-step timeout or until it is found (whichever is shorter), attempt to find the response frame  
+  while ((t.elapsed_time() <2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -222,7 +223,7 @@ bool XBeeAPIParser::readable() {
  * @returns true if successful
  */
 bool XBeeAPIParser::get_oldest_frame(apiFrame_t* frame) {
-  // Try to lock the frame buffer mutex for 1s
+  // Try to lock the frame buffer mutex for single-step timeout
   if (_frameBufferMutex.trylock_for(_time_out)) {
     if (_frameBuffer.length > 0) { // If the frame buffer has data
       // Set frame parameters
@@ -288,57 +289,50 @@ bool XBeeAPIParser::send(apiFrame_t* frame) {
 
   Timer t;
   t.start(); // Start timer; entire send must complete before _time_out
-  if (_modemTxMutex.trylock_for(_time_out)) { // Try to lock down mutex for 1s 
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
-    // Once the timer timed out or data was detected at the serial port, move on from loop  
-    if (_modem->writable() && success) { // If there is data, write out the start delimiter (0x7E)
+  if (_modemTxMutex.trylock_for(_time_out)) { 
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {}
+    if (_modem->writable() && success) { // write the start delimiter (0x7E)
       c = 0x7E;
       _modem->write(&c, 1);
-    } else success = false; // If timed out, set success boolean to false and jump to the end of the function
+    } else success = false;
 
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
-    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    while (t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {} 
     if (_modem->writable() && success) {
-      c = (frame->length+2) >> 8; // Write out length MSB
+      c = (frame->length+2) >> 8; // Write length MSB
       _modem->write(&c, 1);
-    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
+    } else success = false;
     
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
-    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {} 
     if (_modem->writable() && success) {
-      c = (frame->length+2) & 0xFF; // Write out length LSB 
+      c = (frame->length+2) & 0xFF; // Write length LSB 
       _modem->write(&c, 1);
-    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
+    } else success = false;
     
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
-    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {}
     if (_modem->writable() && success) {
-      c = frame->type; // Write out frame type 
+      c = frame->type; // Write frame type 
       _modem->write(&c, 1);
-    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
+    } else success = false;
 
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
-    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {} 
     if (_modem->writable() && success) {
-      c = frame->id; // Wrtie out frame ID 
+      c = frame->id; // Write frame ID 
       _modem->write(&c, 1);
-    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
+    } else success = false;
 
     for (int i = 0; i < frame->length; i++) {
-      while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
-      // Once the timer timed out or data was detected at the serial port, move on from loop  
+      while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {}  
       if (_modem->writable() && success) {
-        c = frame->data[i]; // Write out each byte of the data, one at a time 
+        c = frame->data[i]; // Write each byte of the data, one at a time 
         _modem->write(&c, 1);
-      } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
+      } else success = false;
     }
 
-    while (((t.elapsed_time().count()*0.000001) < _time_out) && (!_modem->writable())) {} // While the elapsed time is less than 1s and there is no data at the serial port, wait 
-    // Once the timer timed out or data was detected at the serial port, move on from loop  
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {}
     if (_modem->writable() && success) {
-      c = checksum; // Write out the final byte (checksum) 
+      c = checksum; // Write the final byte (checksum) 
       _modem->write(&c, 1);
-    } else success = false; // If timed out, set success boolean to false and jump to the end of the function 
+    } else success = false;
     _modemTxMutex.unlock(); 
   }
   return success; // Return success boolean 
@@ -352,8 +346,8 @@ void XBeeAPIParser::set_max_failed_transmits(int maxFails) {
   if ((maxFails>0) && (maxFails<20)) _maxFailedTransmits = maxFails;
 }
 
-void XBeeAPIParser::set_timeout(int time_ms) {
-  if ((time_ms > 0) && (time_ms < 5000)) _time_out = time_ms;
+void XBeeAPIParser::set_timeout(std::chrono::milliseconds t) {
+  if ((t >= 1ms) && (t < 5s)) _time_out = t;
 }
 
 // ???
@@ -380,7 +374,7 @@ int XBeeAPIParser::txAddressed(uint64_t address, char* payload, int len) {
   t.start();
   foundFrame = false;
   ThisThread::sleep_for(7ms);
-  while (((t.elapsed_time().count()*0.001) < 2*_time_out) && (!foundFrame)) {
+  while ((t.elapsed_time() < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x89, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(7ms);
   }
@@ -413,7 +407,7 @@ void XBeeAPIParser::_disassociate() {
   send(&frame);
   t.start();
   foundFrame = false;
-  while (((t.elapsed_time().count()*0.001) < 2*_time_out) && (!foundFrame)) {
+  while ((t.elapsed_time() < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }
@@ -605,9 +599,7 @@ void XBeeAPIParser::_verify_association() {
   foundFrame = false; // Set default value to false 
   send(&frame); // Write out the frame 
   t.start(); // Start the timer 
-  // While the elapsed time in milliseconds is less than 2000ms (2s) and while the frame
-  // has not been found, check if the frame has been found
-  while (((t.elapsed_time().count()*0.001) < 2*_time_out) && (!foundFrame)) {
+  while ((t.elapsed_time() < 2*_time_out) && (!foundFrame)) {
     foundFrame = find_frame(0x88, frameID, &frame);
     if (!foundFrame) ThisThread::sleep_for(5ms);
   }

@@ -2,8 +2,8 @@
  * 
  *  @author John M. Larkin (jlarkin@whitworth.edu)
  *  @author Lydia I. Calderon-Aceituno (lcalderon-aceituno24@my.whitworth.edu)
- *  @version 1.1
- *  @date 2021
+ *  @version 1.2
+ *  @date 2022
  *  @copyright MIT License
  */
 
@@ -44,7 +44,7 @@ private:
     BufferedSerial* _modem;
     volatile partialFrame_t _partialFrame;
     volatile frameBuffer_t _frameBuffer;
-    int _time_out;
+    std::chrono::milliseconds _time_out;
     int _failedTransmits;
     int _maxFailedTransmits;
 
@@ -80,7 +80,7 @@ public:
     int txAddressed(uint64_t address, char* payload, int len);
     int txBroadcast(char* payload, int len);
     int rxPacket(char* payload, uint64_t* address);
-    void set_timeout(int time_ms);
+    void set_timeout(std::chrono::milliseconds t);
     void set_max_failed_transmits(int maxFails);
     char last_RSSI();
     uint64_t get_address(string ni);

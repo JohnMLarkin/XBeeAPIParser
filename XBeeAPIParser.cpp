@@ -40,7 +40,7 @@ void XBeeAPIParser::_init() {
   _isAssociated = false; 
   _failedTransmits = 0;
   _maxFailedTransmits = 5;
-  _frameAlertThreadPtr = NULL; // Set the frame alert thread ptr to null
+  _frameAlertThreadId = NULL; // Set the frame alert thread id to null
   _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer)); // Start the update buffer thread and attach it to the move_frame_to_buffer function
   _modem->attach(callback(this, &XBeeAPIParser::_pull_byte), SerialBase::RxIrq);
 }
@@ -338,8 +338,8 @@ bool XBeeAPIParser::send(apiFrame_t* frame) {
   return success; // Return success boolean 
 }
 
-void XBeeAPIParser::set_frame_alert_thread_id(Thread* alert_thread_ptr) {
-  _frameAlertThreadPtr = alert_thread_ptr;
+void XBeeAPIParser::set_frame_alert_thread_id(osThreadId_t threadID) {
+  _frameAlertThreadId = threadID;
 }
 
 void XBeeAPIParser::set_max_failed_transmits(int maxFails) {
@@ -563,7 +563,7 @@ void XBeeAPIParser::_move_frame_to_buffer() {
       _frameBuffer.length++;
       _frameBufferMutex.unlock();
       _partialFrame.status = 0x00;
-      if (_frameAlertThreadPtr) _frameAlertThreadPtr->flags_set(0x01);
+      if (_frameAlertThreadId) osSignalSet(_frameAlertThreadId, 0x01); 
       _modem->attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
     }
   }

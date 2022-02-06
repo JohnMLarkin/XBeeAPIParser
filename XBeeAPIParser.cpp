@@ -36,13 +36,12 @@ void XBeeAPIParser::_init() {
   }
   _frameBuffer.length = 0;
   _partialFrame.status = 0x00; // Set status to "all good"
-  _time_out = 1000ms; // Timing variable used throughout 
+  _time_out = 1000ms; // Sets baseline for communication timeouts
   _isAssociated = false; 
   _failedTransmits = 0;
   _maxFailedTransmits = 5;
-  _frameAlertThreadId = NULL; // Set the frame alert thread id to null
-  _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer)); // Start the update buffer thread and attach it to the move_frame_to_buffer function
-  _modem->attach(callback(this, &XBeeAPIParser::_pull_byte), SerialBase::RxIrq);
+  _frameAlertThreadId = NULL;
+  _updateBufferThread.start(callback(this, &XBeeAPIParser::_move_frame_to_buffer));
 }
 
 bool XBeeAPIParser::associated() {
@@ -532,9 +531,7 @@ void XBeeAPIParser::_pull_byte() {
               }
               _partialFrame.status = 0x00;
             } else {
-              _modem->attach(NULL); // Stop interrupts on serial input
               _partialFrame.status = 0x06;
-              _updateBufferThread.flags_set(0x01); // Trigger copy to frame buffer outside of ISR
             }
           } else { // Checksum doesn't match.  Bad frame!
             _partialFrame.status = 0x00; // There should be some error signaling
@@ -549,7 +546,10 @@ void XBeeAPIParser::_pull_byte() {
 
 void XBeeAPIParser::_move_frame_to_buffer() {
   while (true) {
-    ThisThread::flags_wait_all(0x01);
+    while (_partialFrame.status != 0x06) {
+      _pull_byte();
+      ThisThread::sleep_for(10ms);
+    }
     if (_frameBufferMutex.trylock_for(5*_time_out)) {
       if (_frameBuffer.length == MAX_INCOMING_FRAMES) {  // Buffer full, drop oldest frame
         _remove_frame_by_index(0);
@@ -564,7 +564,6 @@ void XBeeAPIParser::_move_frame_to_buffer() {
       _frameBufferMutex.unlock();
       _partialFrame.status = 0x00;
       if (_frameAlertThreadId) osSignalSet(_frameAlertThreadId, 0x01); 
-      _modem->attach(callback(this,&XBeeAPIParser::_pull_byte),SerialBase::RxIrq);
     }
   }
 }

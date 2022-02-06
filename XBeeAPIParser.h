@@ -55,7 +55,7 @@ private:
     Mutex _frameBufferMutex;
     Mutex _modemTxMutex;
     Thread _updateBufferThread;
-    Thread* _frameAlertThreadId;
+    osThreadId_t _frameAlertThreadId;
 
     void _pull_byte();
     void _verify_association();

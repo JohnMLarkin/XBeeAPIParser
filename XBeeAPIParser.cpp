@@ -21,7 +21,7 @@ XBeeAPIParser::XBeeAPIParser(BufferedSerial* modem){
  * @param rx RX pin linked to XBee
  * @param baud 
  */
-XBeeAPIParser::XBeeAPIParser(PinName tx, PinName rx, int baud = 921600){ 
+XBeeAPIParser::XBeeAPIParser(PinName tx, PinName rx, int baud) { 
   // Create a pointer to a BufferedSerial from pins
   _modem = new BufferedSerial(tx, rx, baud); 
   _init();
@@ -289,49 +289,50 @@ bool XBeeAPIParser::send(apiFrame_t* frame) {
   Timer t;
   t.start(); // Start timer; entire send must complete before _time_out
   if (_modemTxMutex.trylock_for(_time_out)) { 
-    while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {}
-    if (_modem->writable() && success) { // write the start delimiter (0x7E)
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable())) {}
+    if (_modem->writable()) { // write the start delimiter (0x7E)
       c = 0x7E;
       _modem->write(&c, 1);
-    } else success = false;
+    } else {success = false; goto unlockmutex;}
 
-    while (t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {} 
-    if (_modem->writable() && success) {
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable())) {} 
+    if (_modem->writable()) {
       c = (frame->length+2) >> 8; // Write length MSB
       _modem->write(&c, 1);
-    } else success = false;
+    } else {success = false; goto unlockmutex;}
     
-    while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {} 
-    if (_modem->writable() && success) {
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable())) {} 
+    if (_modem->writable()) {
       c = (frame->length+2) & 0xFF; // Write length LSB 
       _modem->write(&c, 1);
-    } else success = false;
+    } else {success = false; goto unlockmutex;}
     
-    while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {}
-    if (_modem->writable() && success) {
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable())) {}
+    if (_modem->writable()) {
       c = frame->type; // Write frame type 
       _modem->write(&c, 1);
-    } else success = false;
+    } else {success = false; goto unlockmutex;}
 
-    while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {} 
-    if (_modem->writable() && success) {
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable())) {} 
+    if (_modem->writable()) {
       c = frame->id; // Write frame ID 
       _modem->write(&c, 1);
-    } else success = false;
+    } else {success = false; goto unlockmutex;}
 
     for (int i = 0; i < frame->length; i++) {
-      while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {}  
-      if (_modem->writable() && success) {
+      while ((t.elapsed_time() < _time_out) && (!_modem->writable())) {}  
+      if (_modem->writable()) {
         c = frame->data[i]; // Write each byte of the data, one at a time 
         _modem->write(&c, 1);
-      } else success = false;
+      } else {success = false; goto unlockmutex;}
     }
 
-    while ((t.elapsed_time() < _time_out) && (!_modem->writable()) && success) {}
-    if (_modem->writable() && success) {
+    while ((t.elapsed_time() < _time_out) && (!_modem->writable())) {}
+    if (_modem->writable()) {
       c = checksum; // Write the final byte (checksum) 
       _modem->write(&c, 1);
     } else success = false;
+  unlockmutex:
     _modemTxMutex.unlock(); 
   }
   return success; // Return success boolean 
@@ -459,7 +460,7 @@ void XBeeAPIParser::_pull_byte() {
   uint16_t len;
   uint32_t checksum = 0;
   while (_modem->readable() && (_partialFrame.status < 0x06)) {
-    buff = _modem->getc();
+    _modem->read(&buff, 1);
     switch (_partialFrame.status) {
       case 0x00:  // Waiting for start of new frame
         if (buff == 0x7E) {  // Frame start byte should be 0x7E
